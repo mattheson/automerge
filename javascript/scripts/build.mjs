@@ -68,12 +68,9 @@ function isStep(stepStr) {
 function buildWasm(outputDir) {
   const automergeWasmPath = path.join(rustProjectDir, "automerge-wasm")
   console.log("building automerge-wasm")
-  execSync(
-    "cargo build --target wasm32-unknown-unknown --release",
-    {
-      cwd: automergeWasmPath,
-    },
-  )
+  execSync("cargo build --target wasm32-unknown-unknown --release", {
+    cwd: automergeWasmPath,
+  })
 
   const wasmBlobPath = path.join(
     rustProjectDir,
@@ -91,8 +88,9 @@ function buildWasm(outputDir) {
    * "src/wasm_bindgen_output/bundler/"
    *
    * @param {string} target
+   * @param {string[]=} vitePatchFiles
    */
-  function runWasmBindgen(target) {
+  function runWasmBindgen(target, vitePatchFiles) {
     console.log(`running wasm-bindgen for '${target}' target`)
     const outputPath = path.join(outputDir, target)
     fs.mkdirSync(outputPath, { recursive: true })
@@ -102,10 +100,28 @@ function buildWasm(outputDir) {
         cwd: __dirname,
       },
     )
+
+    // add /* @vite-ignore */ comment to URL imports for wasm
+    // prevents vite from bundling multiple wasm files
+    // see https://github.com/automerge/automerge/issues/1037
+    if (vitePatchFiles) {
+      for (const filename of vitePatchFiles) {
+        const filePath = path.join(outputPath, filename)
+
+        let content = fs.readFileSync(filePath, "utf8")
+
+        content = content.replace(
+          /new URL\('automerge_wasm_bg\.wasm', import\.meta\.url\)/g,
+          "new /* @vite-ignore */ URL('automerge_wasm_bg.wasm', import.meta.url)",
+        )
+
+        fs.writeFileSync(filePath, content)
+      }
+    }
   }
 
   runWasmBindgen("bundler")
-  runWasmBindgen("web")
+  runWasmBindgen("web", ["automerge_wasm.js"])
   runWasmBindgen("nodejs")
 }
 
